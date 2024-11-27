@@ -136,6 +136,9 @@ int post_rdma_write_imm(struct client_context *state, int buf_index, int buf_siz
         .lkey = job->mr->lkey
     };
 
+    printf("Writing to remote address: %lx, offset: %x, buf_index: %d\n",
+       state->remote_addr, buf_size * buf_index, buf_index);
+
     struct ibv_send_wr wr = {
         .wr_id = buf_index,
         .sg_list = &sg,

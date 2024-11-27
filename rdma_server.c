@@ -349,6 +349,12 @@ void run_server(struct server_context *ctx, int queue_depth, int buf_size) {
 void post_receive_for_buffer(struct server_context *ctx, int buf_index, int buf_size) {
     struct buffer_entry *entry = &ctx->buffers[buf_index];
 
+    printf("Posting receive for buffer %d at address %p, length %d, lkey %u\n",
+           buf_index, 
+           (void*)entry->buffer, 
+           buf_size,
+           entry->mr->lkey);
+
     struct ibv_sge sg = {
         .addr = (uint64_t)entry->buffer,
         .length = buf_size,
