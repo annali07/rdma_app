@@ -144,7 +144,7 @@ int post_rdma_write_imm(struct client_context *state, int buf_index, int buf_siz
         .send_flags = IBV_SEND_SIGNALED,
         .imm_data = (uint32_t) buf_index,
         .wr.rdma = {
-            .remote_addr = (uint64_t)((char*)state->remote_addr + buf_size * buf_index),
+            .remote_addr = state->remote_addr + (buf_size * buf_index),
             .rkey = state->remote_rkey
         }
     };

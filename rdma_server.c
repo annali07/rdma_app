@@ -341,11 +341,10 @@ void run_server(struct server_context *ctx, int queue_depth, int buf_size) {
         }
         else if (wc.opcode == IBV_WC_RDMA_WRITE) {
             // page_id send completed
-            handle_pageid_sent(ctx, &wc, buf_size);
+            // handle_pageid_sent(ctx, &wc, buf_size);
         }
     }
 }
-
 
 void post_receive_for_buffer(struct server_context *ctx, int buf_index, int buf_size) {
     struct buffer_entry *entry = &ctx->buffers[buf_index];
@@ -371,6 +370,7 @@ void post_receive_for_buffer(struct server_context *ctx, int buf_index, int buf_
 // process received job
 void process_received_job(struct server_context *ctx, uint32_t buf_index, int buf_size) {
     struct buffer_entry *entry = &ctx->buffers[buf_index];
+    
     (void) buf_size;
 
     if (entry->in_use) {
@@ -380,6 +380,7 @@ void process_received_job(struct server_context *ctx, uint32_t buf_index, int bu
     entry->in_use = true;
     on_compression_complete(ctx, buf_index, NULL);
     // compress_data_async(entry->buffer, buf_size, on_compression_complete, ctx, buf_index);
+    post_receive_for_buffer(ctx, buf_index, buf_size);
 }
 
 void store_compressed_data (uint32_t page_id, compressed_result_t *result) {
@@ -425,14 +426,14 @@ void on_compression_complete(void *context, int buf_index, compressed_result_t *
 
 }
 
-void handle_pageid_sent(struct server_context *ctx, struct ibv_wc *wc, int buf_size) {
-    int buf_index = wc->wr_id;
-    struct buffer_entry *entry = &ctx->buffers[buf_index];
+// void handle_pageid_sent(struct server_context *ctx, struct ibv_wc *wc, int buf_size) {
+//     int buf_index = wc->wr_id;
+//     struct buffer_entry *entry = &ctx->buffers[buf_index];
 
-    // mark buffer as available 
-    entry->in_use = false;
-    post_receive_for_buffer(ctx, buf_index, buf_size);
-}
+//     // mark buffer as available 
+//     entry->in_use = false;
+//     v
+// }
 
 void cleanup_server_context(struct server_context *ctx, int queue_depth) {
     if (!ctx) return;
