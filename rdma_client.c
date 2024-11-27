@@ -331,7 +331,7 @@ int parser_client(struct client_param *user_param, char *argv[], int argc)
         return FAILURE;
     }
 
-    user_param->queue_depth = atoi(argv[4]);
+    user_param->num_jobs = atoi(argv[4]);
     if (user_param->num_jobs <= 0 || user_param->num_jobs > MAX_JOBS) {
         fprintf(stderr, "Invalid number of jobs (1-%d): %d\n", MAX_JOBS, user_param->num_jobs);
         return FAILURE;
