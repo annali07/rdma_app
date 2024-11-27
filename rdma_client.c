@@ -244,18 +244,21 @@ void run_client(struct client_context *ctx, int queue_depth, int num_jobs, int b
     }
 }
 
-struct client_context *setup_client(int queue_depth, int buf_size) {
+struct client_context *setup_client(struct rdma_resources *res, int queue_depth, int buf_size) {
     struct client_context *ctx = malloc(sizeof(struct client_context));
     if (!ctx) {
         fprintf(stderr, "Failed to allocate memory for client state\n");
         return NULL;
     }
 
+
+
     memset(ctx->job_completed, 0, sizeof(ctx->job_completed));
     ctx->jobs_completed = 0;
     ctx->next_job_to_send = 0;
 
     // Set up RDMA Resources
+
 
     // Setup contexts and buffers (queue depth of buffers allocated)
     for (int i = 0; i < queue_depth; ++i ) {
@@ -264,7 +267,7 @@ struct client_context *setup_client(int queue_depth, int buf_size) {
             fprintf(stderr, "Failed to allocate memory for context buffer %d\n", i);
             goto cleanup;
         }
-        ctx->contexts[i].mr = ibv_reg_mr(ctx->pd, ctx->contexts[i].buffer, buf_size,
+        ctx->contexts[i].mr = ibv_reg_mr(res->pd, ctx->contexts[i].buffer, buf_size,
                                            IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
         if (!ctx->contexts[i].mr) {
             fprintf(stderr, "Failed to register memory for context buffer %d\n", i);
@@ -281,7 +284,7 @@ struct client_context *setup_client(int queue_depth, int buf_size) {
         perror("Failed to allocate memory for recv buffer\n");
         goto cleanup;
     }
-    ctx->recv_mr = ibv_reg_mr(ctx->pd, ctx->recv_buffer, queue_depth * sizeof(uint32_t),
+    ctx->recv_mr = ibv_reg_mr(res->pd, ctx->recv_buffer, queue_depth * sizeof(uint32_t),
                                 IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
     if (!ctx->recv_mr) {
         perror("Failed to register memory for recv buffer\n");
@@ -387,7 +390,7 @@ int main(int argc, char *argv[]) {
 
     printf("Setting up server context...\n");
     // create client context
-    ctx = setup_client(user_param->queue_depth, buf_size);
+    ctx = setup_client(rdma_res, user_param->queue_depth, buf_size);
     if (!ctx) {
         fprintf(stderr, "Failed to setup client context\n");
         goto cleanup;

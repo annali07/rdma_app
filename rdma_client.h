@@ -50,7 +50,7 @@ void handle_pageid_received(struct client_context *state,
                           int num_jobs);
 int post_receive(struct client_context *ctx, int recv_idx);
 void run_client(struct client_context *ctx, int queue_depth, int num_jobs, int buf_size);
-struct client_context* setup_client(int queue_depth, int buf_size);
+struct client_context* setup_client(struct rdma_resources *res, int queue_depth, int buf_size);
 int parser_client(struct client_param *user_param, char *argv[], int argc);
 void cleanup_client_context(struct client_context *ctx, int queue_depth);
 
