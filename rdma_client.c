@@ -137,7 +137,7 @@ int post_rdma_write_imm(struct client_context *state, int buf_index, int buf_siz
     };
 
     printf("Writing to remote address: %lx, offset: %x, buf_index: %d, buf_size: %d\n",
-       state->remote_addr, buf_size * buf_index, buf_index, buf_size);
+      state->remote_addr + (buf_size * buf_index), buf_size * buf_index, buf_index, buf_size);
 
     struct ibv_send_wr wr = {
         .wr_id = buf_index,
