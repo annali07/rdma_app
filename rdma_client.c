@@ -371,7 +371,7 @@ int main(int argc, char *argv[]) {
         exit(FAILURE);
     }
 
-    const int buf_size = PAGE_SIZE;
+    int buf_size = PAGE_SIZE;
 
     // parse arguments
     user_param = malloc(sizeof(struct client_param));
