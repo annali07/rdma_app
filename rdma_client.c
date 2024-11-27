@@ -81,7 +81,7 @@ struct connection_info * create_connection_info(struct rdma_resources *res, stru
     }
 
     // Fill in connection details from rdma_resources
-    info->lid = res->lid;
+    info->gid = res->gid;
     info->qpn = res->qp_num;
     info->rkey = (uint32_t) ctx->recv_mr->rkey;
     info->addr = (uint64_t) ctx->recv_buffer;

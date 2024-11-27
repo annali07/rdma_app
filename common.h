@@ -24,7 +24,7 @@
 
 // connection info exchanged between client and server
 typedef struct connection_info {
-    int lid;        // local ID
+    union ibv_gid gid;
     int qpn;        // queue pair number
     uint64_t addr;  // buffer address
     uint32_t rkey;  // remote key
@@ -35,7 +35,7 @@ typedef struct rdma_resources {
     struct ibv_pd *pd;
     struct ibv_cq *cq;
     struct ibv_qp *qp;
-    uint16_t lid;       // local id
+    union ibv_gid gid;
     uint32_t qp_num;    // qp num 
 } rdma_resources;
 

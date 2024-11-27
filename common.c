@@ -46,7 +46,12 @@ struct rdma_resources* rdma_init_resources(struct rdma_config *config) {
     if (!res->qp) goto cleanup;
 
     // get local ID and QP number
-    res->lid = get_local_id(res->context, config->ib_port);
+    union ibv_gid gid;
+    if (ibv_query_gid(res->context, config->ib_port, 0, &gid)) {
+        fprintf(stderr, "Failed to query GID\n");
+        goto cleanup;
+    }
+    res->gid = gid;
     res->qp_num = get_qp_num(res->qp);
 
     return res;
@@ -89,16 +94,6 @@ struct ibv_context* create_context(char **ib_devname)
     return context;
 }
 
-// Function to get local LID
-uint16_t get_local_id(struct ibv_context* context, int ib_port) {
-    struct ibv_port_attr port_attr;
-    if (ibv_query_port(context, ib_port, &port_attr)) {
-        fprintf(stderr, "Failed to query port %d\n", ib_port);
-        return 0;
-    }
-    return port_attr.lid;
-}
-
 // Function to get QP number
 uint32_t get_qp_num(struct ibv_qp* qp) {
     return qp->qp_num;
@@ -120,25 +115,51 @@ int change_qpstate_to_init(struct rdma_resources *res, struct rdma_config *confi
     return SUCCESS;
 }
 
+void print_gid(union ibv_gid *gid) {
+    printf("GID raw bytes: ");
+    for (int i = 0; i < 16; i++) {
+        printf("%.2x", gid->raw[i]);
+        if (i < 15) printf(":");
+    }
+    printf("\n");
+}
+
 // Function to modify QP state to Ready to Receive (RTR)
 int change_qp_to_RTR(struct rdma_resources *lres, struct connection_info *rres, struct rdma_config *config) {
     struct ibv_qp_attr rtr_attr;
     memset(&rtr_attr, 0, sizeof(rtr_attr));
+
+    // Verify inputs
+    if (!lres->qp || !rres || !config) {
+        fprintf(stderr, "Invalid parameters passed to change_qp_to_RTR\n");
+        return FAILURE;
+    }
 
     rtr_attr.qp_state = IBV_QPS_RTR;
     rtr_attr.path_mtu = IBV_MTU_1024;
     rtr_attr.rq_psn = 0;
     rtr_attr.max_dest_rd_atomic = 1;
     rtr_attr.min_rnr_timer = 0x12;
-    rtr_attr.ah_attr.is_global = 0;
-    rtr_attr.ah_attr.sl = 0;
-    rtr_attr.ah_attr.src_path_bits = 0;
-    rtr_attr.ah_attr.port_num = config->ib_port;
-    
-    rtr_attr.dest_qp_num = rres->qpn;
-    rtr_attr.ah_attr.dlid = rres->lid;
+    rtr_attr.ah_attr.is_global = 1; // for RoCE
 
-    printf("remote: %d local: %d\n", rres->qpn, lres->qp_num);
+    rtr_attr.ah_attr.port_num = config->ib_port;
+    rtr_attr.ah_attr.grh.sgid_index = 0;
+    rtr_attr.ah_attr.grh.hop_limit = 1;
+    rtr_attr.dest_qp_num = rres->qpn;
+    rtr_attr.ah_attr.grh.dgid = rres->gid; // destination GID
+
+    printf("Debug info:\n");
+    printf("Remote QPN: %d\n", rres->qpn);
+    printf("Local QPN: %d\n", lres->qp_num);
+    printf("Port: %d\n", config->ib_port);
+    print_gid(&lres->gid);
+    struct ibv_port_attr port_attr;
+    if (ibv_query_port(lres->qp->context, config->ib_port, &port_attr)) {
+        fprintf(stderr, "Failed to query port %d\n", config->ib_port);
+        return FAILURE;
+    }
+    printf("Port state: %d (should be %d)\n", port_attr.state, IBV_PORT_ACTIVE);
+
     if (ibv_modify_qp(lres->qp, &rtr_attr,
             IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU |
             IBV_QP_DEST_QPN | IBV_QP_RQ_PSN | IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER)) {

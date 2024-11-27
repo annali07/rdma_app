@@ -56,7 +56,7 @@ struct connection_info* create_connection_info(struct rdma_resources *res, struc
     }
 
     // Fill in connection details from rdma_resources
-    info->lid = res->lid;
+    info->gid = res->gid;
     info->qpn = res->qp_num;
     info->rkey = (uint32_t) ctx->buffers[0].mr->rkey;
     info->addr = (uint64_t) ctx->buffers[0].buffer;
@@ -104,7 +104,7 @@ int exchange_connection_info (struct connection_info *local_info, struct connect
     if (server_sockfd < 0) return FAILURE;
 
     printf("Waiting for client connection...\n");
-    
+
     struct sockaddr_in client_addr;
     socklen_t addr_len = sizeof(client_addr);
     int client_sockfd = accept(server_sockfd, (struct sockaddr *)&client_addr, &addr_len);
