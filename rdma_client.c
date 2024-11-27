@@ -42,10 +42,6 @@ int create_client_socket(const char *server_ip) {
     return sockfd;
 }
 
-int send_connection_info(int sockfd, struct connection_info *info) {
-    return (write(sockfd, info, sizeof(*info)) < 0);
-}
-
 int exchange_connection_info (struct connection_info *local_info, struct connection_info *remote_info, struct client_param *user_param) {
     int sockfd = create_client_socket(user_param->server_ip);
     if (sockfd < 0) {
@@ -308,25 +304,39 @@ cleanup:
 
 int parser_client(struct client_param *user_param, char *argv[], int argc)
 {
-    if (argc < 3) {
-        fprintf(stderr, "USAGE: %s <server_ip> <ibv_device>\n", argv[0]);
+    if (argc < 5) {
+        fprintf(stderr, "USAGE: %s <server_ip> <ibv_device> <queue_depth> <num_jobs>\n", argv[0]);
         return FAILURE;
     }
-    
     // Assign server_ip and ib_devname from argv
     char *server_ip = argv[1];
-    char *ib_devname = argv[2];
-
     if (validate_ip(server_ip) != SUCCESS) {
         return FAILURE;
     }
-
     // populate user_param struct
     strncpy(user_param->server_ip, server_ip, INET_ADDRSTRLEN - 1);
     user_param->server_ip[INET_ADDRSTRLEN - 1] = '\0'; // Ensure null-termination
-    strncpy(user_param->ib_devname, ib_devname, sizeof(user_param->ib_devname) - 1);
-    user_param->ib_devname[sizeof(user_param->ib_devname) - 1] = '\0'; // Ensure null-termination
+
+    user_param->ib_devname = malloc(IBV_DEVICE_MAX_LENGTH);
+    if (!user_param->ib_devname) {
+        perror("Malloc failed for devname");
+        return FAILURE;
+    }
+    strncpy(user_param->ib_devname, argv[2], IBV_DEVICE_MAX_LENGTH - 1);
+    user_param->ib_devname[IBV_DEVICE_MAX_LENGTH - 1] = '\0';
     
+    user_param->queue_depth = atoi(argv[3]);
+    if (user_param->queue_depth <= 0 || user_param->queue_depth > MAX_QUEUE_DEPTH) {
+        fprintf(stderr, "Invalid queue depth (1-%d): %d\n", MAX_QUEUE_DEPTH, user_param->queue_depth);
+        return FAILURE;
+    }
+
+    user_param->queue_depth = atoi(argv[4]);
+    if (user_param->num_jobs <= 0 || user_param->num_jobs > MAX_JOBS) {
+        fprintf(stderr, "Invalid number of jobs (1-%d): %d\n", MAX_JOBS, user_param->num_jobs);
+        return FAILURE;
+    }
+    user_param->ib_port = IB_PORT_DEFAULT;
     return SUCCESS;
 }
 
@@ -340,31 +350,42 @@ int main(int argc, char *argv[]) {
 
     // init config 
     struct rdma_config config = {
+        .ib_devname = NULL;
         .ib_port = IB_PORT_DEFAULT,
         .cq_size = MAX_QUEUE_DEPTH,
         .num_qp_wr = MAX_QUEUE_DEPTH,
         .num_sge = 1,
         .use_event = false      
     };
+    config.ib_devname = malloc(sizeof(char) * IBV_DEVICE_MAX_LENGTH);
+    if (!config.ib_devname) {
+        perror("Malloc failed\n");
+        exit(FAILURE);
+    }
 
     const int buf_size = PAGE_SIZE;
 
     // parse arguments
-    user_param = malloc(sizeof(user_param));
+    user_param = malloc(sizeof(struct client_param));
+
     if (!user_param || parser_client(user_param, argv, argc) != SUCCESS) {
         fprintf(stderr, "Failed to parse parameters\n");
         goto cleanup;
     }
     strncpy(config.ib_devname, user_param->ib_devname, IBV_DEVICE_MAX_LENGTH - 1);
     config.ib_devname[IBV_DEVICE_MAX_LENGTH - 1] = '\0';
+    printf("Device name: %s\n", config.ib_devname);
     
     // initialize rdma resources
+    printf("Starting rdma_init_resources...\n");
     rdma_res = rdma_init_resources(&config);
     if (!rdma_res) {
         fprintf(stderr, "Failed to initialize RDMA resources\n");
         goto cleanup;
     }
+    printf("RDMA resources initialized\n");
 
+    printf("Setting up server context...\n");
     // create client context
     ctx = setup_client(user_param->queue_depth, buf_size);
     if (!ctx) {
