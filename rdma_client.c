@@ -22,24 +22,25 @@ int create_client_socket(const char *server_ip) {
         return FAILURE;
     }
 
-    struct sockaddr_in server_addr = {
-        .sin_family = AF_INET,
-        .sin_port = htons(PORT),
-    };
+    struct sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(PORT);
+    addr.sin_addr.s_addr = inet_addr(server_ip);
 
-    if (inet_pton(AF_INET, server_ip, &server_addr.sin_addr) <= 0) {
+    if (inet_pton(AF_INET, server_ip, &addr.sin_addr) <= 0) {
         perror("Invalid address");
         close(sockfd);
         return FAILURE;
     }
 
-    if (connect(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+    if (connect(sockfd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         printf("Server IP: %s\n", server_ip);
         perror("Failed to connect to server");
         close(sockfd);
         return FAILURE;
     }
 
+    printf("Connected to server\n");
     return sockfd;
 }
 

@@ -78,7 +78,11 @@ int create_server_socket() {
     };
 
     int opt = 1;
-    setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt))){
+        perror("Error in setsocket");
+        close(sockfd);
+        return FAILURE;
+    }
 
     if (bind(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
         perror("Failed to bind socket");
@@ -86,7 +90,7 @@ int create_server_socket() {
         return FAILURE;
     }
 
-    if (listen(sockfd, 1) < 0) {
+    if (listen(sockfd, 10) < 0) {
         perror("Failed to listen on socket");
         close(sockfd);
         return FAILURE;
@@ -109,6 +113,7 @@ int exchange_connection_info (struct connection_info *local_info, struct connect
         close(server_sockfd);
         return FAILURE;
     }
+    printf("Connected with client\n");
 
     // receive client info first 
     if (read(client_sockfd, remote_info, sizeof(*remote_info)) < 0) {
@@ -272,6 +277,7 @@ struct server_context *setup_server(struct rdma_resources *res, int queue_depth,
         }
         ctx->buffers[i].in_use = false;
     }
+
     if(failed) {
         // Cleanup already registered MRs
         for (int i = 0; i < queue_depth; i++) {
