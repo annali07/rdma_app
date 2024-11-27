@@ -245,7 +245,7 @@ void run_client(struct client_context *ctx, int queue_depth, int num_jobs, int b
 }
 
 struct client_context *setup_client(int queue_depth, int buf_size) {
-    struct client_context *ctx = malloc(sizeof(*ctx));
+    struct client_context *ctx = malloc(sizeof(struct client_context));
     if (!ctx) {
         fprintf(stderr, "Failed to allocate memory for client state\n");
         return NULL;
