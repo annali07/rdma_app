@@ -34,7 +34,8 @@ int create_client_socket(const char *server_ip) {
     }
 
     if (connect(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
-        perror("Failed to connect to server %s", server_ip);
+        printf("Server IP: %s\n", server_ip);
+        perror("Failed to connect to server");
         close(sockfd);
         return FAILURE;
     }
