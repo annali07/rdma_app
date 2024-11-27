@@ -27,11 +27,11 @@ int create_client_socket(const char *server_ip) {
     addr.sin_port = htons(PORT);
     addr.sin_addr.s_addr = inet_addr(server_ip);
 
-    if (inet_pton(AF_INET, server_ip, &addr.sin_addr) <= 0) {
-        perror("Invalid address");
-        close(sockfd);
-        return FAILURE;
-    }
+    // if (inet_pton(AF_INET, server_ip, &addr.sin_addr) <= 0) {
+    //     perror("Invalid address");
+    //     close(sockfd);
+    //     return FAILURE;
+    // }
 
     if (connect(sockfd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         printf("Server IP: %s\n", server_ip);
