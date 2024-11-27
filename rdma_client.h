@@ -4,7 +4,7 @@
 
 struct client_param {
     char server_ip[INET_ADDRSTRLEN];
-    char ib_devname[IBV_DEVICE_MAX_LENGTH];
+    char *ib_devname;
     int ib_port;
     int queue_depth;
     int num_jobs;

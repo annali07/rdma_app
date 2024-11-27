@@ -350,7 +350,7 @@ int main(int argc, char *argv[]) {
 
     // init config 
     struct rdma_config config = {
-        .ib_devname = NULL;
+        .ib_devname = NULL,
         .ib_port = IB_PORT_DEFAULT,
         .cq_size = MAX_QUEUE_DEPTH,
         .num_qp_wr = MAX_QUEUE_DEPTH,
