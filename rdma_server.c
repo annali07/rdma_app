@@ -104,7 +104,7 @@ int exchange_connection_info (struct connection_info *local_info, struct connect
     if (server_sockfd < 0) return FAILURE;
 
     printf("Waiting for client connection...\n");
-
+    
     struct sockaddr_in client_addr;
     socklen_t addr_len = sizeof(client_addr);
     int client_sockfd = accept(server_sockfd, (struct sockaddr *)&client_addr, &addr_len);
@@ -113,6 +113,7 @@ int exchange_connection_info (struct connection_info *local_info, struct connect
         close(server_sockfd);
         return FAILURE;
     }
+
     printf("Connected with client\n");
 
     // receive client info first 

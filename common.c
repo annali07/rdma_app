@@ -138,6 +138,7 @@ int change_qp_to_RTR(struct rdma_resources *lres, struct connection_info *rres, 
     rtr_attr.dest_qp_num = rres->qpn;
     rtr_attr.ah_attr.dlid = rres->lid;
 
+    printf("remote: %d local: %d\n", rres->qpn, lres->qp_num);
     if (ibv_modify_qp(lres->qp, &rtr_attr,
             IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU |
             IBV_QP_DEST_QPN | IBV_QP_RQ_PSN | IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER)) {
