@@ -34,7 +34,7 @@ int create_client_socket(const char *server_ip) {
     }
 
     if (connect(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
-        perror("Failed to connect to server");
+        perror("Failed to connect to server %s", server_ip);
         close(sockfd);
         return FAILURE;
     }
@@ -388,7 +388,7 @@ int main(int argc, char *argv[]) {
     }
     printf("RDMA resources initialized\n");
 
-    printf("Setting up server context...\n");
+    printf("Setting up client context...\n");
     // create client context
     ctx = setup_client(rdma_res, user_param->queue_depth, buf_size);
     if (!ctx) {
