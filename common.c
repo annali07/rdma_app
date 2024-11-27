@@ -153,6 +153,7 @@ int change_qp_to_RTR(struct rdma_resources *lres, struct connection_info *rres, 
     printf("Local QPN: %d\n", lres->qp_num);
     printf("Port: %d\n", config->ib_port);
     print_gid(&lres->gid);
+    print_gid(&rres->gid);
     struct ibv_port_attr port_attr;
     if (ibv_query_port(lres->qp->context, config->ib_port, &port_attr)) {
         fprintf(stderr, "Failed to query port %d\n", config->ib_port);
@@ -173,6 +174,20 @@ int change_qp_to_RTR(struct rdma_resources *lres, struct connection_info *rres, 
 int change_qp_to_RTS(struct rdma_resources *res) {
     struct ibv_qp_attr rts_attr;
     memset(&rts_attr, 0, sizeof(rts_attr));
+
+    // First verify we're in RTR state
+    struct ibv_qp_attr attr;
+    struct ibv_qp_init_attr init_attr;
+    if (ibv_query_qp(res->qp, &attr, IBV_QP_STATE, &init_attr)) {
+        fprintf(stderr, "Failed to query QP state\n");
+        return FAILURE;
+    }
+    
+    if (attr.qp_state != IBV_QPS_RTR) {
+        fprintf(stderr, "QP not in RTR state before moving to RTS\n");
+        return FAILURE;
+    }
+
     rts_attr.qp_state = IBV_QPS_RTS;
     rts_attr.timeout = 0x12;
     rts_attr.retry_cnt = 7;
@@ -182,7 +197,7 @@ int change_qp_to_RTS(struct rdma_resources *res) {
 
     if (ibv_modify_qp(res->qp, &rts_attr,
             IBV_QP_STATE | IBV_QP_TIMEOUT | IBV_QP_RETRY_CNT |
-            IBV_QP_RNR_RETRY | IBV_QP_SQ_PSN )) {
+            IBV_QP_RNR_RETRY | IBV_QP_SQ_PSN | IBV_QP_MAX_QP_RD_ATOMIC)) {
         fprintf(stderr, "Failed to modify QP to RTS\n");
         return FAILURE;
     }
