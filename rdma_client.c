@@ -351,7 +351,6 @@ void *worker_thread(void *arg) {
     struct connection_info *local_info = NULL;
     struct connection_info *remote_info = NULL;
 
-        printf("hi\n");
     // initialize rdma resources
     printf("Starting rdma_init_resources...\n");
     rdma_res = rdma_init_resources(ctx->config);
