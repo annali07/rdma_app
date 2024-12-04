@@ -204,3 +204,37 @@ int change_qp_to_RTS(struct rdma_resources *res) {
     }
     return SUCCESS;
 }
+
+struct thread_pool* create_thread_pool(int num_threads) {
+    struct thread_pool *pool = malloc(sizeof(struct thread_pool));
+    if (!pool) return NULL;
+
+    pool->num_threads = num_threads;
+    pool->shutdown = false;
+    pool->threads = malloc(num_threads * sizeof(pthread_t));
+    if (!pool->threads) {
+        free(pool);
+        return NULL;
+    }
+
+    for (int i = 0; i < num_threads; ++i) {
+        if (pthread_create(&pool->threads[i], NULL, thread_func, pool) != 0) {
+            fprintf(stderr, "Failed to create thread %d\n", i);
+            destroy_thread_pool(pool);
+            return NULL;
+        }
+    }
+
+    return pool;
+}
+
+void destroy_thread_pool(struct thread_pool *pool) {
+    if (!pool) return;
+
+    pool->shutdown = true;
+    for (int i = 0; i < pool->num_threads; ++i) {
+        pthread_join(pool->threads[i], NULL);
+    }
+    free(pool->threads);
+    free(pool);
+}

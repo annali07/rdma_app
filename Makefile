@@ -1,6 +1,6 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -g
-LDFLAGS = -libverbs
+LDFLAGS = -libverbs -lpthread
 
 # Source files
 COMMON_SRC = common.c

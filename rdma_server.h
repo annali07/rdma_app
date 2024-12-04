@@ -26,6 +26,13 @@ struct buffer_entry {
     uint32_t job_id;    // completely not used
 };
 
+struct main_server_context {
+    struct server_context **threads;  // Array of thread contexts
+    int num_threads;
+    struct server_param *params;
+}
+
+
 struct server_context {
     // one buffer per possible in-flight request 
     struct buffer_entry buffers[MAX_QUEUE_DEPTH];
@@ -43,6 +50,10 @@ struct server_context {
 
     // next page_id to assign
     uint32_t next_page_id;      // TODO: Modify based on compression logic
+
+    int thread_id;
+    int num_jobs;
+    int buf_size;
 };
 
 struct server_context *setup_server(struct rdma_resources *res, int queue_depth, int buf_size);

@@ -67,5 +67,8 @@ int change_qp_to_RTR(struct rdma_resources *lres, struct connection_info *rres, 
 
 int change_qp_to_RTS(struct rdma_resources *res);
 
+struct thread_pool* create_thread_pool(int num_threads);
+
+void destroy_thread_pool(struct thread_pool *pool);
 
 #endif /* COMMON_H */

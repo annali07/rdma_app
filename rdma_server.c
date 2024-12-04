@@ -140,12 +140,11 @@ int exchange_connection_info (struct connection_info *local_info, struct connect
 }
 
 int main(int argc, char *argv[]) {
-    struct rdma_resources *rdma_res = NULL;
-    struct server_context *ctx = NULL;
-    struct connection_info *local_info = NULL;
-    struct connection_info *remote_info = NULL;
+
     struct server_param *user_param = NULL;
-    int ret = -1;
+    struct main_server_context *main_server_ctx;
+    pthread_t *thread_handles;
+    int ret = FAILURE;
     
     struct rdma_config config = {
         .ib_devname = NULL,
@@ -162,7 +161,6 @@ int main(int argc, char *argv[]) {
     }
 
     user_param = malloc(sizeof(struct server_param));
-
     if (!user_param || parse_arg(user_param, argv, argc) != SUCCESS) {
         fprintf(stderr, "Failed to parse parameters\n");
         goto cleanup;
@@ -170,8 +168,75 @@ int main(int argc, char *argv[]) {
     strncpy(config.ib_devname, user_param->ib_devname, IBV_DEVICE_MAX_LENGTH - 1);
     config.ib_devname[IBV_DEVICE_MAX_LENGTH - 1] = '\0';
     printf("Device name: %s\n", config.ib_devname);
-
+    
     int buf_size = PAGE_SIZE * user_param->batch_size;
+    int tasks_per_thread = user_param->num_jobs / user_param->num_threads;
+    
+    main_server_ctx = malloc(sizeof(struct main_server_context));
+    if (!main_server_ctx) {
+        perror("Failed to allocate memory for main server context");
+        goto cleanup;
+    }
+
+    main_server_ctx->num_threads = user_param->num_threads;
+    main_server_ctx->params = user_param;
+    main_server_ctx->threads = malloc(sizeof(struct server_context*) * user_param->num_threads);
+    thread_handles = malloc(sizeof(pthread_t) * user_param->num_threads);
+    if (!main_server_ctx->threads || !thread_handles) {
+        perror("Failed to allocate memory for threads");
+        goto cleanup;
+    }
+
+    // launch threads
+    for (int i = 0; i < params->num_threads; ++i) {
+        struct server_context *thread_ctx = malloc(sizeof(struct server_context));
+        if (!thread_ctx) {
+            perror("Failed to allocate memory for thread context");
+            goto cleanup;
+        }
+        thread_ctx->num_jobs = tasks_per_thread;
+        thread_ctx->buf_size = buf_size;
+        thread_ctx->thread_id = i;
+
+        main_server_ctx->threads[i] = thread_ctx;
+        if (pthread_create(&thread_handles[i], NULL, worker_thread, thread_ctx)) {
+            perror("Failed to create thread");
+            goto cleanup;
+        }
+    }
+
+    // Wait for threads
+    for (int i = 0; i < params->num_threads; i++) {
+        pthread_join(thread_handles[i], NULL);
+    }
+
+    ret = SUCCESS;
+
+cleanup:
+    if (config.ib_devname) free (config.ib_devname);
+    if (server_ctx) {
+        if (server_ctx->threads) {
+            for (int i = 0; i < params->num_threads; i++) {
+                if (server_ctx->threads[i]) {
+                    free(server_ctx->threads[i]);
+                }
+            }
+            free(server_ctx->threads);
+        }
+        free(server_ctx);
+    }
+    if (thread_handles) free(thread_handles);
+    if (params) free(params);
+    return ret;
+}
+
+
+void *worker_thread (void *arg) {
+    sturct thread_context *tctc = (struct thread_context *) arg;
+    struct server_context *ctx = NULL;
+    struct rdma_resources *rdma_res = NULL;
+    struct connection_info *local_info = NULL;
+    struct connection_info *remote_info = NULL;
 
     // initialize rdma resources
     printf("Starting rdma_init_resources...\n");
@@ -235,18 +300,18 @@ int main(int argc, char *argv[]) {
     run_server(ctx, user_param->queue_depth, buf_size);
     ret = 0;
 
-    // TODO: Handle Multithread
-    // TODO: Register Memory 
-
 cleanup:
-    if (config.ib_devname) free (config.ib_devname);
     if (ctx) cleanup_server_context(ctx, user_param ? user_param->queue_depth : 0);
     if (rdma_res) rdma_free_resources(rdma_res);
     if (local_info) free(local_info);
     if (remote_info) free(remote_info);
     if (user_param) free(user_param);
+
     return ret;
 }
+
+
+
 
 
 /////////////////////////////////////////////////////////////////////////
