@@ -266,33 +266,25 @@ struct server_context *setup_server(struct rdma_resources *res, int queue_depth,
         free(ctx);
         return NULL;
     }
+    // Register the entire region once
+    struct ibv_mr *region_mr = ibv_reg_mr(res->pd, buffer_region, 
+                                     buf_size * queue_depth,
+                                     IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
 
-    // initialize buffers
-    bool failed = false;
-    for (int i = 0; i < queue_depth; ++i) {
-        ctx->buffers[i].buffer = (char *) buffer_region + (buf_size * i);
-        ctx->buffers[i].mr = ibv_reg_mr(res->pd, ctx->buffers[i].buffer, buf_size, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
-        if (!ctx->buffers[i].mr) {
-            perror("Failed to register memory for buffer");
-            failed = true;
-            break;
-        }
-        ctx->buffers[i].in_use = false;
-    }
-
-    if(failed) {
-        // Cleanup already registered MRs
-        for (int i = 0; i < queue_depth; i++) {
-            if (ctx->buffers[i].mr) {
-                ibv_dereg_mr(ctx->buffers[i].mr);
-            }
-        }
+    if (!region_mr) {
+        perror("Failed to register memory region");
         free(buffer_region);
         free(ctx);
         return NULL;
     }
 
-
+    // Initialize buffers - all using the same MR
+    for (int i = 0; i < queue_depth; ++i) {
+        ctx->buffers[i].buffer = (char *)buffer_region + (buf_size * i);
+        ctx->buffers[i].mr = region_mr;  // All buffers share the same MR
+        ctx->buffers[i].in_use = false;
+    }
+    
     ctx->page_id_send = malloc(sizeof(uint32_t *));  // Just one uint32_t
     if (!ctx->page_id_send) {
         perror("Failed to allocate memory for page_id_send");
@@ -301,7 +293,7 @@ struct server_context *setup_server(struct rdma_resources *res, int queue_depth,
     }
 
     ctx->page_id_mr = ibv_reg_mr(res->pd, ctx->page_id_send, sizeof(uint32_t *),
-                            IBV_ACCESS_LOCAL_WRITE);
+                            IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE );
                             
     if (!ctx->page_id_mr) {
         perror("Failed to register page_id_mr");
@@ -342,7 +334,8 @@ void run_server(struct server_context *ctx, int queue_depth, int buf_size) {
         }
         else if (wc.opcode == IBV_WC_RDMA_WRITE) {
             // page_id send completed
-            // handle_pageid_sent(ctx, &wc, buf_size);
+            uint32_t buf_index = wc.imm_data;
+            post_receive_for_buffer(ctx, buf_index, buf_size);
         }
     }
 }
@@ -387,7 +380,6 @@ void process_received_job(struct server_context *ctx, uint32_t buf_index, int bu
     entry->in_use = true;
     on_compression_complete(ctx, buf_index, NULL);
     // compress_data_async(entry->buffer, buf_size, on_compression_complete, ctx, buf_index);
-    post_receive_for_buffer(ctx, buf_index, buf_size);
 }
 
 void store_compressed_data (uint32_t page_id, compressed_result_t *result) {
