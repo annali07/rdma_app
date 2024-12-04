@@ -26,7 +26,7 @@ sequenceDiagram
     S->>S: Post initial receives<br/>for all buffers
     C->>C: Post initial receives<br/>for page_ids
     
-    rect rgb(240, 248, 255)
+    rect rgba(240, 248, 255, 0.1)
         Note over C,S: RDMA Operation Loop
         C->>HW: RDMA Write with Immediate<br/>(data + buf_index)
         HW->>S: Data arrives in server buffer
