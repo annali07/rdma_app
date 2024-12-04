@@ -14,8 +14,8 @@
 // server arg parser
 int parse_arg(struct server_param *user_param, char *argv[], int argc)
 {
-    if (argc < 4) {
-        fprintf(stderr, "USAGE: %s <ibv_device> <queue_depth> <num_jobs>\n", argv[0]);
+    if (argc < 6) {
+        fprintf(stderr, "USAGE: %s <ibv_device> <queue_depth> <num_jobs> <batch_size> <num_threads>\n", argv[0]);
         return FAILURE;
     }
 
@@ -38,6 +38,9 @@ int parse_arg(struct server_param *user_param, char *argv[], int argc)
         fprintf(stderr, "Invalid number of jobs (1-%d): %d\n", MAX_JOBS, user_param->num_jobs);
         return FAILURE;
     }
+
+    user_param->batch_size = atoi(argv[4]);
+    user_param->num_threads = atoi(argv[5]);
 
     user_param->ib_port = IB_PORT_DEFAULT;
     return SUCCESS;
@@ -158,8 +161,6 @@ int main(int argc, char *argv[]) {
         exit(FAILURE);
     }
 
-    int buf_size = PAGE_SIZE;
-
     user_param = malloc(sizeof(struct server_param));
 
     if (!user_param || parse_arg(user_param, argv, argc) != SUCCESS) {
@@ -170,6 +171,7 @@ int main(int argc, char *argv[]) {
     config.ib_devname[IBV_DEVICE_MAX_LENGTH - 1] = '\0';
     printf("Device name: %s\n", config.ib_devname);
 
+    int buf_size = PAGE_SIZE * user_param->batch_size;
 
     // initialize rdma resources
     printf("Starting rdma_init_resources...\n");
@@ -284,7 +286,7 @@ struct server_context *setup_server(struct rdma_resources *res, int queue_depth,
         ctx->buffers[i].mr = region_mr;  // All buffers share the same MR
         ctx->buffers[i].in_use = false;
     }
-    
+
     ctx->page_id_send = malloc(sizeof(uint32_t *));  // Just one uint32_t
     if (!ctx->page_id_send) {
         perror("Failed to allocate memory for page_id_send");
@@ -369,15 +371,16 @@ void post_receive_for_buffer(struct server_context *ctx, int buf_index, int buf_
 
 // process received job
 void process_received_job(struct server_context *ctx, uint32_t buf_index, int buf_size) {
-    struct buffer_entry *entry = &ctx->buffers[buf_index];
+    // struct buffer_entry *entry = &ctx->buffers[buf_index];
     
     (void) buf_size;
 
-    if (entry->in_use) {
-        fprintf(stderr, "Error: Buffer %d already in use.\n", buf_index);
-        return;
-    }
-    entry->in_use = true;
+    // if (entry->in_use) {
+    //     fprintf(stderr, "Error: Buffer %d already in use.\n", buf_index);
+    //     return;
+    // }
+    // entry->in_use = true;
+
     on_compression_complete(ctx, buf_index, NULL);
     // compress_data_async(entry->buffer, buf_size, on_compression_complete, ctx, buf_index);
 }
