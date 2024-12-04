@@ -77,6 +77,7 @@ struct ibv_context* create_context(char **ib_devname)
     struct ibv_context* context = NULL;
 	int num_devices;
 	struct ibv_device **dev_list = ibv_get_device_list(&num_devices);
+    struct ibv_device **original_dev_list = dev_list;  // Save the original pointer
 	struct ibv_device *ib_dev = NULL;
 
     for (; (ib_dev = *dev_list); ++dev_list) {
@@ -85,8 +86,8 @@ struct ibv_context* create_context(char **ib_devname)
             break;
         }
     }
+    ibv_free_device_list(original_dev_list);
     
-    ibv_free_device_list(dev_list);
     if (context == NULL) {
         fprintf(stderr, "Unable to find/open device\n");
         return NULL;

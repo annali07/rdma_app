@@ -237,6 +237,7 @@ int main(int argc, char *argv[]) {
     // TODO: Register Memory 
 
 cleanup:
+    if (config.ib_devname) free (config.ib_devname);
     if (ctx) cleanup_server_context(ctx, user_param ? user_param->queue_depth : 0);
     if (rdma_res) rdma_free_resources(rdma_res);
     if (local_info) free(local_info);
