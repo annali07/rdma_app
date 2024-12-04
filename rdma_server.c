@@ -284,7 +284,7 @@ struct server_context *setup_server(struct rdma_resources *res, int queue_depth,
         ctx->buffers[i].mr = region_mr;  // All buffers share the same MR
         ctx->buffers[i].in_use = false;
     }
-    
+
     ctx->page_id_send = malloc(sizeof(uint32_t *));  // Just one uint32_t
     if (!ctx->page_id_send) {
         perror("Failed to allocate memory for page_id_send");
@@ -369,15 +369,16 @@ void post_receive_for_buffer(struct server_context *ctx, int buf_index, int buf_
 
 // process received job
 void process_received_job(struct server_context *ctx, uint32_t buf_index, int buf_size) {
-    struct buffer_entry *entry = &ctx->buffers[buf_index];
+    // struct buffer_entry *entry = &ctx->buffers[buf_index];
     
     (void) buf_size;
 
-    if (entry->in_use) {
-        fprintf(stderr, "Error: Buffer %d already in use.\n", buf_index);
-        return;
-    }
-    entry->in_use = true;
+    // if (entry->in_use) {
+    //     fprintf(stderr, "Error: Buffer %d already in use.\n", buf_index);
+    //     return;
+    // }
+    // entry->in_use = true;
+
     on_compression_complete(ctx, buf_index, NULL);
     // compress_data_async(entry->buffer, buf_size, on_compression_complete, ctx, buf_index);
 }
