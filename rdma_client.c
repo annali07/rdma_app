@@ -442,6 +442,8 @@ int main(int argc, char *argv[]) {
         goto cleanup;
     }
     
+    sleep(1);
+    
     // run client main loop
     run_client(ctx, user_param->queue_depth, user_param->num_jobs, buf_size);
     ret = 0;

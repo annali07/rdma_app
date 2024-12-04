@@ -204,4 +204,3 @@ int change_qp_to_RTS(struct rdma_resources *res) {
     }
     return SUCCESS;
 }
-
