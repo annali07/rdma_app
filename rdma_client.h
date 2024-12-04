@@ -8,6 +8,8 @@ struct client_param {
     int ib_port;
     int queue_depth;
     int num_jobs;
+    int batch_size;
+    int num_threads;
 };
 
 struct job_context {
