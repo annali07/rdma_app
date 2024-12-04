@@ -30,7 +30,7 @@ struct main_server_context {
     struct server_context **threads;  // Array of thread contexts
     int num_threads;
     struct server_param *params;
-}
+};
 
 
 struct server_context {
@@ -54,9 +54,11 @@ struct server_context {
     int thread_id;
     int num_jobs;
     int buf_size;
+    int queue_depth;
+    struct rdma_config *config;
 };
 
-struct server_context *setup_server(struct rdma_resources *res, int queue_depth, int buf_size);
+int setup_server(struct server_context *ctx, struct rdma_resources *res, int queue_depth, int buf_size);
 void run_server(struct server_context *ctx, int queue_depth, int buf_size);
 void post_receive_for_buffer(struct server_context *ctx, int buf_index, int buf_size);
 void process_received_job(struct server_context *ctx, uint32_t buf_index, int buf_size);
@@ -69,3 +71,4 @@ struct connection_info *create_connection_info(struct rdma_resources *res, struc
 int create_server_socket();
 int parse_arg(struct server_param *user_param, char *argv[], int argc);
 void cleanup_server_context(struct server_context *ctx, int queue_depth);
+void *worker_thread (void *arg);

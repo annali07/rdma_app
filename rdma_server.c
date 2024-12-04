@@ -146,28 +146,11 @@ int main(int argc, char *argv[]) {
     pthread_t *thread_handles;
     int ret = FAILURE;
     
-    struct rdma_config config = {
-        .ib_devname = NULL,
-        .ib_port = IB_PORT_DEFAULT,
-        .cq_size = MAX_QUEUE_DEPTH,
-        .num_qp_wr = MAX_QUEUE_DEPTH,
-        .num_sge = 1,
-        .use_event = false
-    };
-    config.ib_devname = malloc(sizeof(char) * IBV_DEVICE_MAX_LENGTH);
-    if (!config.ib_devname) {
-        perror("Malloc failed\n");
-        exit(FAILURE);
-    }
-
     user_param = malloc(sizeof(struct server_param));
     if (!user_param || parse_arg(user_param, argv, argc) != SUCCESS) {
         fprintf(stderr, "Failed to parse parameters\n");
         goto cleanup;
     }
-    strncpy(config.ib_devname, user_param->ib_devname, IBV_DEVICE_MAX_LENGTH - 1);
-    config.ib_devname[IBV_DEVICE_MAX_LENGTH - 1] = '\0';
-    printf("Device name: %s\n", config.ib_devname);
     
     int buf_size = PAGE_SIZE * user_param->batch_size;
     int tasks_per_thread = user_param->num_jobs / user_param->num_threads;
@@ -188,7 +171,7 @@ int main(int argc, char *argv[]) {
     }
 
     // launch threads
-    for (int i = 0; i < params->num_threads; ++i) {
+    for (int i = 0; i < user_param->num_threads; ++i) {
         struct server_context *thread_ctx = malloc(sizeof(struct server_context));
         if (!thread_ctx) {
             perror("Failed to allocate memory for thread context");
@@ -198,6 +181,25 @@ int main(int argc, char *argv[]) {
         thread_ctx->buf_size = buf_size;
         thread_ctx->thread_id = i;
 
+        struct rdma_config *config = malloc(sizeof(struct rdma_config));
+        config->ib_devname = malloc(sizeof(char) * IBV_DEVICE_MAX_LENGTH);
+        if (!config->ib_devname) {
+            free(config);  // Clean up first malloc
+            perror("Malloc failed\n");
+            exit(FAILURE);
+        }
+        config->ib_port = IB_PORT_DEFAULT;
+        config->cq_size = MAX_QUEUE_DEPTH;
+        config->num_qp_wr = MAX_QUEUE_DEPTH;
+        config->num_sge = 1;
+        config->use_event = false;
+
+        strncpy(config->ib_devname, user_param->ib_devname, IBV_DEVICE_MAX_LENGTH - 1);
+        config->ib_devname[IBV_DEVICE_MAX_LENGTH - 1] = '\0';
+
+        thread_ctx->config = config;
+        thread_ctx->queue_depth = user_param->queue_depth;
+
         main_server_ctx->threads[i] = thread_ctx;
         if (pthread_create(&thread_handles[i], NULL, worker_thread, thread_ctx)) {
             perror("Failed to create thread");
@@ -206,41 +208,40 @@ int main(int argc, char *argv[]) {
     }
 
     // Wait for threads
-    for (int i = 0; i < params->num_threads; i++) {
+    for (int i = 0; i < user_param->num_threads; i++) {
         pthread_join(thread_handles[i], NULL);
     }
 
     ret = SUCCESS;
 
 cleanup:
-    if (config.ib_devname) free (config.ib_devname);
-    if (server_ctx) {
-        if (server_ctx->threads) {
-            for (int i = 0; i < params->num_threads; i++) {
-                if (server_ctx->threads[i]) {
-                    free(server_ctx->threads[i]);
+    // if (config.ib_devname) free (config.ib_devname);
+    if (main_server_ctx) {
+        if (main_server_ctx->threads) {
+            for (int i = 0; i < user_param->num_threads; i++) {
+                if (main_server_ctx->threads[i]) {
+                    free(main_server_ctx->threads[i]);
                 }
             }
-            free(server_ctx->threads);
+            free(main_server_ctx->threads);
         }
-        free(server_ctx);
+        free(main_server_ctx);
     }
     if (thread_handles) free(thread_handles);
-    if (params) free(params);
+    if (user_param) free(user_param);
     return ret;
 }
 
 
 void *worker_thread (void *arg) {
-    sturct thread_context *tctc = (struct thread_context *) arg;
-    struct server_context *ctx = NULL;
+    struct server_context *ctx = (struct server_context *) arg;
     struct rdma_resources *rdma_res = NULL;
     struct connection_info *local_info = NULL;
     struct connection_info *remote_info = NULL;
 
     // initialize rdma resources
     printf("Starting rdma_init_resources...\n");
-    rdma_res = rdma_init_resources(&config);
+    rdma_res = rdma_init_resources(ctx->config);
     if (!rdma_res) {
         fprintf(stderr, "Failed to initialize RDMA resources\n");
         goto cleanup;
@@ -249,8 +250,7 @@ void *worker_thread (void *arg) {
 
     printf("Setting up server context...\n");
     // create server context
-    ctx = setup_server(rdma_res, user_param->queue_depth, buf_size);
-    if (!ctx) {
+    if (setup_server(ctx, rdma_res, ctx->queue_depth, ctx->buf_size) < 0) {
         fprintf(stderr, "Failed to setup server context\n");
         goto cleanup;
     }
@@ -261,7 +261,7 @@ void *worker_thread (void *arg) {
     ctx->pd = rdma_res->pd;
 
     // change qp to init
-    if (change_qpstate_to_init(rdma_res, &config) != SUCCESS) {
+    if (change_qpstate_to_init(rdma_res, ctx->config) != SUCCESS) {
         fprintf(stderr, "Failed to change QP state to INIT\n");
         goto cleanup;
     }
@@ -285,7 +285,7 @@ void *worker_thread (void *arg) {
 
 
     // change qp state to RTR 
-    if (change_qp_to_RTR(rdma_res, remote_info, &config) != SUCCESS) {
+    if (change_qp_to_RTR(rdma_res, remote_info, ctx->config) != SUCCESS) {
         fprintf(stderr, "Failed to change QP state to RTR\n");
         goto cleanup;
     }
@@ -297,17 +297,16 @@ void *worker_thread (void *arg) {
     }
 
     // run server
-    run_server(ctx, user_param->queue_depth, buf_size);
-    ret = 0;
+    run_server(ctx, ctx->queue_depth, ctx->buf_size);
 
 cleanup:
-    if (ctx) cleanup_server_context(ctx, user_param ? user_param->queue_depth : 0);
+    if (ctx) cleanup_server_context(ctx, ctx ? ctx->queue_depth : 0);
     if (rdma_res) rdma_free_resources(rdma_res);
     if (local_info) free(local_info);
     if (remote_info) free(remote_info);
-    if (user_param) free(user_param);
-
-    return ret;
+    // if (ctx->config) free(user_param);
+    // free config????
+    return NULL;
 }
 
 
@@ -320,19 +319,15 @@ cleanup:
 
 
 // server initialization
-struct server_context *setup_server(struct rdma_resources *res, int queue_depth, int buf_size) {
-    struct server_context *ctx = malloc(sizeof(struct server_context));
-    if (!ctx) {
-        perror("Failed to allocate memory for server context");
-        return NULL;
-    }
+int setup_server(struct server_context *ctx, struct rdma_resources *res, int queue_depth, int buf_size) {
 
     void *buffer_region = malloc(buf_size * queue_depth);
     if (!buffer_region) {
         perror("Failed to allocate memory for buffers");
         free(ctx);
-        return NULL;
+        return FAILURE;
     }
+
     // Register the entire region once
     struct ibv_mr *region_mr = ibv_reg_mr(res->pd, buffer_region, 
                                      buf_size * queue_depth,
@@ -342,7 +337,7 @@ struct server_context *setup_server(struct rdma_resources *res, int queue_depth,
         perror("Failed to register memory region");
         free(buffer_region);
         free(ctx);
-        return NULL;
+        return FAILURE;
     }
 
     // Initialize buffers - all using the same MR
@@ -356,7 +351,7 @@ struct server_context *setup_server(struct rdma_resources *res, int queue_depth,
     if (!ctx->page_id_send) {
         perror("Failed to allocate memory for page_id_send");
         cleanup_server_context(ctx, queue_depth);
-        return NULL;
+        return FAILURE;
     }
 
     ctx->page_id_mr = ibv_reg_mr(res->pd, ctx->page_id_send, sizeof(uint32_t *),
@@ -365,11 +360,11 @@ struct server_context *setup_server(struct rdma_resources *res, int queue_depth,
     if (!ctx->page_id_mr) {
         perror("Failed to register page_id_mr");
         cleanup_server_context(ctx, queue_depth);
-        return NULL;
+        return FAILURE;
     }
 
     ctx->next_page_id = 0; // TODO: Modify based on compression logic
-    return ctx;
+    return SUCCESS;
 }
 
 // main server loop
