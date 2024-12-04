@@ -44,8 +44,8 @@ int create_client_socket(const char *server_ip) {
     return sockfd;
 }
 
-int exchange_connection_info (struct connection_info *local_info, struct connection_info *remote_info, struct client_param *user_param) {
-    int sockfd = create_client_socket(user_param->server_ip);
+int exchange_connection_info (struct connection_info *local_info, struct connection_info *remote_info, char server_ip[INET_ADDRSTRLEN]) {
+    int sockfd = create_client_socket(server_ip);
     if (sockfd < 0) {
         fprintf(stderr, "Failed to create client socket\n");
         return FAILURE;
@@ -249,14 +249,7 @@ void run_client(struct client_context *ctx, int queue_depth, int num_jobs, int b
     }
 }
 
-struct client_context *setup_client(struct rdma_resources *res, int queue_depth, int buf_size) {
-    struct client_context *ctx = malloc(sizeof(struct client_context));
-    if (!ctx) {
-        fprintf(stderr, "Failed to allocate memory for client state\n");
-        return NULL;
-    }
-
-
+int setup_client(struct client_context *ctx, struct rdma_resources *res, int queue_depth, int buf_size) {
 
     memset(ctx->job_completed, 0, sizeof(ctx->job_completed));
     ctx->jobs_completed = 0;
@@ -297,7 +290,7 @@ struct client_context *setup_client(struct rdma_resources *res, int queue_depth,
         goto cleanup;
     }
 
-    return ctx;
+    return SUCCESS;
 
 cleanup:
     for (int i = 0; i < queue_depth; ++i) {
@@ -307,7 +300,7 @@ cleanup:
             free(ctx->contexts[i].buffer);
     }
     free(ctx);
-    return NULL;
+    return FAILURE;
 }
 
 int parser_client(struct client_param *user_param, char *argv[], int argc)
@@ -352,45 +345,16 @@ int parser_client(struct client_param *user_param, char *argv[], int argc)
     return SUCCESS;
 }
 
-int main(int argc, char *argv[]) {
+void *worker_thread(void *arg) {
+    struct client_context *ctx = (struct client_context *) arg;
     struct rdma_resources *rdma_res = NULL;
     struct connection_info *local_info = NULL;
     struct connection_info *remote_info = NULL;
-    struct client_param *user_param = NULL;
-    struct client_context *ctx = NULL;
-    int ret = -1;
 
-    // init config 
-    struct rdma_config config = {
-        .ib_devname = NULL,
-        .ib_port = IB_PORT_DEFAULT,
-        .cq_size = MAX_QUEUE_DEPTH,
-        .num_qp_wr = MAX_QUEUE_DEPTH,
-        .num_sge = 1,
-        .use_event = false      
-    };
-    config.ib_devname = malloc(sizeof(char) * IBV_DEVICE_MAX_LENGTH);
-    if (!config.ib_devname) {
-        perror("Malloc failed\n");
-        exit(FAILURE);
-    }
-
-    // parse arguments
-    user_param = malloc(sizeof(struct client_param));
-
-    if (!user_param || parser_client(user_param, argv, argc) != SUCCESS) {
-        fprintf(stderr, "Failed to parse parameters\n");
-        goto cleanup;
-    }
-    strncpy(config.ib_devname, user_param->ib_devname, IBV_DEVICE_MAX_LENGTH - 1);
-    config.ib_devname[IBV_DEVICE_MAX_LENGTH - 1] = '\0';
-    printf("Device name: %s\n", config.ib_devname);
-
-    int buf_size = PAGE_SIZE * user_param->batch_size;
-    
+        printf("hi\n");
     // initialize rdma resources
     printf("Starting rdma_init_resources...\n");
-    rdma_res = rdma_init_resources(&config);
+    rdma_res = rdma_init_resources(ctx->config);
     if (!rdma_res) {
         fprintf(stderr, "Failed to initialize RDMA resources\n");
         goto cleanup;
@@ -398,9 +362,7 @@ int main(int argc, char *argv[]) {
     printf("RDMA resources initialized\n");
 
     printf("Setting up client context...\n");
-    // create client context
-    ctx = setup_client(rdma_res, user_param->queue_depth, buf_size);
-    if (!ctx) {
+    if (setup_client(ctx, rdma_res, ctx->queue_depth, ctx->buf_size) < 0){
         fprintf(stderr, "Failed to setup client context\n");
         goto cleanup;
     }
@@ -411,7 +373,7 @@ int main(int argc, char *argv[]) {
     ctx->pd = rdma_res->pd;
 
     // change qp to init
-    if (change_qpstate_to_init(rdma_res, &config) != SUCCESS) {
+    if (change_qpstate_to_init(rdma_res, ctx->config) != SUCCESS) {
         fprintf(stderr, "Failed to change QP state to INIT\n");
         goto cleanup;
     }
@@ -425,7 +387,7 @@ int main(int argc, char *argv[]) {
     }
 
     // connect to server and exchange info 
-    if (exchange_connection_info(local_info, remote_info, user_param) != SUCCESS) {
+    if (exchange_connection_info(local_info, remote_info, ctx->server_ip) != SUCCESS) {
         fprintf(stderr, "Failed to exchange connection info\n");
         goto cleanup;
     }
@@ -435,7 +397,7 @@ int main(int argc, char *argv[]) {
     ctx->remote_rkey = remote_info->rkey;
 
     // change state to RTR
-    if (change_qp_to_RTR(rdma_res, remote_info, &config) != SUCCESS) {
+    if (change_qp_to_RTR(rdma_res, remote_info, ctx->config) != SUCCESS) {
         fprintf(stderr, "Failed to change QP state to RTR\n");
         goto cleanup;
     }
@@ -449,15 +411,106 @@ int main(int argc, char *argv[]) {
     sleep(1);
 
     // run client main loop
-    run_client(ctx, user_param->queue_depth, user_param->num_jobs, buf_size);
-    ret = 0;
-
+    run_client(ctx, ctx->queue_depth, ctx->num_jobs,ctx->buf_size);
 cleanup:
-    if (ctx) cleanup_client_context(ctx, user_param ? user_param->queue_depth : 0);
-    if (rdma_res) rdma_free_resources(rdma_res);
     if (local_info) free(local_info);
     if (remote_info) free(remote_info);
-    if (user_param) free(user_param);
+    if (rdma_res) rdma_free_resources(rdma_res);
+}
+
+
+int main(int argc, char *argv[]) {
+    
+    struct client_param *user_param = NULL;
+    struct main_client_context *main_client_ctx;
+    pthread_t *thread_handles;
+    int ret = FAILURE;
+
+
+    // parse arguments
+    user_param = malloc(sizeof(struct client_param));
+    if (!user_param || parser_client(user_param, argv, argc) != SUCCESS) {
+        fprintf(stderr, "Failed to parse parameters\n");
+        goto cleanup;
+    }
+
+    int buf_size = PAGE_SIZE * user_param->batch_size;
+    int tasks_per_thread = user_param->num_jobs / user_param->num_threads;
+
+    main_client_ctx = malloc(sizeof(struct main_client_context));
+    if (!main_client_ctx) {
+        perror("Failed to allocate memory for main client context");
+        goto cleanup;
+    }
+
+    main_client_ctx->num_threads = user_param->num_threads;
+    main_client_ctx->params = user_param;
+    main_client_ctx->threads = malloc(sizeof(struct client_context*) * user_param->num_threads);
+    thread_handles = malloc(sizeof(pthread_t) * user_param->num_threads);
+    if (!main_client_ctx->threads || !thread_handles) {
+        perror("Failed to allocate memory for threads");
+        goto cleanup;
+    }
+    printf("num trheads: %d", user_param->num_threads);
+
+    for (int i = 0; i < user_param->num_threads; ++i) {
+        struct client_context *thread_ctx = malloc(sizeof(struct client_context));
+        if (!thread_ctx) {
+            perror("Failed to allocate memory for thread context");
+            goto cleanup;
+        }
+        thread_ctx->num_jobs = tasks_per_thread;
+        thread_ctx->buf_size = buf_size;
+        thread_ctx->thread_id = i;
+        strcpy(thread_ctx->server_ip, user_param->server_ip);
+
+        struct rdma_config *config = malloc(sizeof(struct rdma_config));
+        config->ib_devname = malloc(sizeof(char) * IBV_DEVICE_MAX_LENGTH);
+        if (!config->ib_devname) {
+            free(config);  // Clean up first malloc
+            perror("Malloc failed\n");
+            exit(FAILURE);
+        }
+        config->ib_port = IB_PORT_DEFAULT;
+        config->cq_size = MAX_QUEUE_DEPTH;
+        config->num_qp_wr = MAX_QUEUE_DEPTH;
+        config->num_sge = 1;
+        config->use_event = false;
+
+        strncpy(config->ib_devname, user_param->ib_devname, IBV_DEVICE_MAX_LENGTH - 1);
+        config->ib_devname[IBV_DEVICE_MAX_LENGTH - 1] = '\0';
+
+        thread_ctx->config = config;
+        thread_ctx->queue_depth = user_param->queue_depth;
+
+        main_client_ctx->threads[i] = thread_ctx;
+        if (pthread_create(&thread_handles[i], NULL, worker_thread, thread_ctx)) {
+            perror("Failed to create thread");
+            goto cleanup;
+        }
+    }
+
+    for (int i = 0; i < user_param->num_threads; i++) {
+        void *thread_ret;
+        pthread_join(thread_handles[i], &thread_ret);
+    }
+
+    ret = SUCCESS;
+
+cleanup:
+    if (thread_handles) {
+        free(thread_handles);
+    }
+    if (main_client_ctx) {
+        cleanup_main_context(main_client_ctx);
+    } else {
+        // If main_client_ctx wasn't allocated but user_param was
+        if (user_param) {
+            if (user_param->ib_devname) free(user_param->ib_devname);
+            free(user_param);
+        }
+    }
+    
     return ret;
 }
 
@@ -479,4 +532,35 @@ void cleanup_client_context(struct client_context *ctx, int queue_depth) {
         free(ctx->recv_buffer);
         
     free(ctx);
+}
+
+void cleanup_main_context(struct main_client_context *main_ctx) {
+    if (!main_ctx) return;
+    
+    // Clean up threads array
+    if (main_ctx->threads) {
+        for (int i = 0; i < main_ctx->num_threads; i++) {
+            if (main_ctx->threads[i]) {
+                // Clean up config
+                if (main_ctx->threads[i]->config) {
+                    if (main_ctx->threads[i]->config->ib_devname) {
+                        free(main_ctx->threads[i]->config->ib_devname);
+                    }
+                    free(main_ctx->threads[i]->config);
+                }
+                cleanup_client_context(main_ctx->threads[i], main_ctx->threads[i]->queue_depth);
+            }
+        }
+        free(main_ctx->threads);
+    }
+    
+    // Clean up params
+    if (main_ctx->params) {
+        if (main_ctx->params->ib_devname) {
+            free(main_ctx->params->ib_devname);
+        }
+        free(main_ctx->params);
+    }
+    
+    free(main_ctx);
 }

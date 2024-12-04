@@ -22,6 +22,12 @@ struct job_context {
     uint32_t page_id;
 };
 
+struct main_client_context {
+    struct client_context **threads;
+    int num_threads;
+    struct client_param *params;
+};
+
 struct client_context {
     bool job_completed[MAX_JOBS];   
     struct job_context contexts[MAX_QUEUE_DEPTH];
@@ -37,6 +43,13 @@ struct client_context {
 
     uint64_t remote_addr;
     uint32_t remote_rkey;
+
+    int thread_id; 
+    int num_jobs;
+    int buf_size;
+    int queue_depth;
+    struct rdma_config *config;
+    char server_ip[INET_ADDRSTRLEN];
 };
 
 // Function declarations
@@ -52,8 +65,9 @@ void handle_pageid_received(struct client_context *state,
                           int num_jobs);
 int post_receive(struct client_context *ctx, int recv_idx);
 void run_client(struct client_context *ctx, int queue_depth, int num_jobs, int buf_size);
-struct client_context* setup_client(struct rdma_resources *res, int queue_depth, int buf_size);
+int setup_client(struct client_context *ctx, struct rdma_resources *res, int queue_depth, int buf_size);
 int parser_client(struct client_param *user_param, char *argv[], int argc);
 void cleanup_client_context(struct client_context *ctx, int queue_depth);
-
+void *worker_thread(void *arg);
+void cleanup_main_context(struct main_client_context *main_ctx);
 #endif
